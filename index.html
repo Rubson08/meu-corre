@@ -754,6 +754,7 @@ function renderAjustes() {
     <button class="btn sec" onclick="salvarMetaGeral()">Salvar meta geral</button></div>
   <div class="titulo">Conta</div>
   <div class="card"><div class="row"><span class="mut">Entrou como</span><b style="font-size:14px">${esc(S.user.email)}</b></div>
+    <button class="btn sec" onclick="trocarSenha()">🔒 Trocar senha</button>
     <button class="btn red" onclick="sair()">Sair</button></div>
   <div class="rodape">Meu Corre · NOSBUR Sistemas</div>`;
 }
@@ -845,6 +846,29 @@ async function abrirApp() {
   await carregarBase();
   if (!S.plataformas.length) S.aba = 'ajustes';
   render();
+}
+function trocarSenha() {
+  modal(`${cabModal('Trocar senha')}
+    <label>Senha atual</label><input id="sA" type="password" autocomplete="current-password">
+    <label>Nova senha</label><input id="sN" type="password" autocomplete="new-password" placeholder="Mínimo de 6 caracteres">
+    <label>Repita a nova senha</label><input id="sC" type="password" autocomplete="new-password">
+    <label style="display:flex;align-items:center;gap:10px;color:var(--txt);margin-top:14px"><input type="checkbox" style="width:20px;height:20px"
+      onchange="['sA','sN','sC'].forEach(i=>$('#'+i).type=this.checked?'text':'password')"> Mostrar senhas</label>
+    <button class="btn" id="sB" onclick="salvarSenha()">Salvar nova senha</button>`);
+}
+async function salvarSenha() {
+  const atual = $('#sA').value, nova = $('#sN').value, conf = $('#sC').value;
+  if (!atual) return toast('Digite a senha atual', 'erro');
+  if (nova.length < 6) return toast('A nova senha precisa ter pelo menos 6 caracteres', 'erro');
+  if (nova !== conf) return toast('As duas senhas novas não são iguais', 'erro');
+  if (nova === atual) return toast('A nova senha é igual à atual', 'erro');
+  const b = $('#sB'); b.disabled = true; b.textContent = 'Salvando…';
+  try {
+    const { error: e1 } = await sb.auth.signInWithPassword({ email: S.user.email, password: atual });
+    if (e1) { toast('Senha atual incorreta', 'erro'); return; }
+    await q(sb.auth.updateUser({ password: nova }));
+    fecharModal(); toast('✓ Senha alterada');
+  } catch (e) { } finally { if ($('#sB')) { b.disabled = false; b.textContent = 'Salvar nova senha'; } }
 }
 async function sair() { await sb.auth.signOut(); S.user = null; telaLogin(); }
 

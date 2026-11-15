@@ -1,5 +1,5 @@
 // Meu Corre — service worker (app instalável). Mude a versão a cada publicação.
-const CACHE = 'meu-corre-v3';
+const CACHE = 'meu-corre-v4';
 const ARQUIVOS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
