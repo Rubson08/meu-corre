@@ -127,7 +127,7 @@ const S = {
   user: null, plataformas: [], config: { meta_mensal_geral: 0 },
   aba: 'inicio', periodo: 'mes',
   histMes: null, histTab: 'recargas', histPlat: null, hist: { prod: [], rec: [], gas: [] },
-  lancTipo: 'recarga', lancPlat: null, lancCat: 'Gasolina',
+  lancTipo: 'recarga', lancPlat: null, lancCat: 'Gasolina', lancModo: 'um', lancDias: new Set(),
   contas: []
 };
 const CATS = ['Gasolina', 'Alimentação', 'Manutenção', 'Celular/Internet', 'Aluguel do veículo', 'Outros'];
@@ -427,7 +427,10 @@ function ajustaCampoLanc() {
   const p = plat(S.lancPlat), l = $('#lblValor'), i = $('#fValor');
   if (!i) return;
   if (S.lancTipo === 'recarga' && l) {
-    l.textContent = isQtd(p) ? `Quantos ${unid(p)} você fez?` : 'Quanto de recarga/depósito você trouxe?';
+    l.textContent = S.lancModo === 'varios'
+      ? (isQtd(p) ? `Total de ${unid(p)} nesses dias` : 'Total de recarga/depósito nesses dias')
+      : (isQtd(p) ? `Quantos ${unid(p)} você fez?` : 'Quanto de recarga/depósito você trouxe?');
+    previaDias();
     i.placeholder = isQtd(p) ? '0' : 'R$ 0,00';
     i.inputMode = isQtd(p) ? 'numeric' : 'decimal';
   } else if (S.lancTipo === 'recebi') {
@@ -445,11 +448,25 @@ function renderLancar() {
     $('#main').innerHTML = h + `<div class="vazio">Primeiro cadastre uma plataforma.<button class="btn" onclick="editarPlataforma()">+ Cadastrar plataforma</button></div></div>`; return;
   }
   if (t === 'recarga') {
-    h += `<label style="margin-top:0">Em qual plataforma?</label>${chipsPlat(ativas, S.lancPlat, 'selLanc')}
+    const um = S.lancModo !== 'varios';
+    h += `<div class="seg" style="margin-bottom:14px">
+        <button class="${um ? 'on' : ''}" onclick="S.lancModo='um';render()">Um dia</button>
+        <button class="${um ? '' : 'on'}" onclick="S.lancModo='varios';render()">Vários dias</button></div>
+      <label style="margin-top:0">Em qual plataforma?</label>${chipsPlat(ativas, S.lancPlat, 'selLanc')}`;
+    if (um) h += `
       <label id="lblValor">Quanto você trouxe?</label><input id="fValor" class="grande" autocomplete="off">
       <label>Dia</label><input id="fData" type="date" value="${H}" max="${H}">
       <label>Observação (opcional)</label><input id="fObs" placeholder="Ex.: live, campanha...">
       <p class="mut" style="font-size:12px;margin-top:10px">Se já tiver lançamento nesse dia, o valor é somado ao do dia.</p>`;
+    else h += `
+      <div style="display:flex;gap:10px"><div style="flex:1"><label>De</label><input id="fDe" type="date" value="${iso(semMes(hoje())[0])}" max="${H}" onchange="montaDias()"></div>
+        <div style="flex:1"><label>Até</label><input id="fAte" type="date" value="${H}" max="${H}" onchange="montaDias()"></div></div>
+      <label>Dias que trabalhou <small>(toque para tirar folgas)</small></label><div class="chips" id="diasChips"></div>
+      <label id="lblValor">Total nesses dias</label><input id="fValor" class="grande" autocomplete="off" oninput="previaDias()">
+      <div id="previa" style="font-size:14px;margin-top:10px;line-height:1.45"></div>
+      <label>Se algum desses dias já tiver valor lançado</label>
+      <select id="fModo"><option value="substituir">Substituir pelo novo valor</option><option value="somar">Somar ao que já tinha</option></select>
+      <input id="fObs" type="hidden" value="">`;
   } else if (t === 'recebi') {
     h += `<label style="margin-top:0">Qual plataforma te pagou?</label>${chipsPlat(ativas, S.lancPlat, 'selLanc')}
       <label>Valor recebido</label><input id="fValor" class="grande" inputmode="decimal" placeholder="R$ 0,00" autocomplete="off">
@@ -469,14 +486,63 @@ function renderLancar() {
   }
   h += `<button class="btn" id="btnSalvar" onclick="salvarLanc()">Salvar</button></div>`;
   $('#main').innerHTML = h;
+  if (t === 'recarga' && S.lancModo === 'varios') montaDias();
   ajustaCampoLanc();
+}
+/* ---- lançar vários dias de uma vez (divide o total igualmente) ---- */
+function montaDias() {
+  let a = $('#fDe').value, b = $('#fAte').value, H = iso(hoje());
+  if (!a || !b) return;
+  if (b > H) b = $('#fAte').value = H;
+  if (a > b) { [a, b] = [b, a]; $('#fDe').value = a; $('#fAte').value = b; }
+  const dias = [];
+  for (let d = dt(a); iso(d) <= b && dias.length < 62; d = addD(d, 1)) dias.push(iso(d));
+  S.lancDias = new Set(dias);
+  $('#diasChips').innerHTML = dias.map(d => `<button class="chip on" style="padding:8px 10px;font-size:13px" onclick="toggleDia('${d}',this)">${DIAS[dt(d).getDay()]} ${pad(dt(d).getDate())}</button>`).join('');
+  previaDias();
+}
+function toggleDia(d, el) {
+  if (S.lancDias.has(d)) S.lancDias.delete(d); else S.lancDias.add(d);
+  el.classList.toggle('on', S.lancDias.has(d)); previaDias();
+}
+function dividir(total, n, inteiro) {
+  if (inteiro && Number.isInteger(total)) {
+    const base = Math.floor(total / n), r = total - base * n;
+    return Array.from({ length: n }, (_, i) => base + (i < r ? 1 : 0));
+  }
+  const c = Math.round(total * 100), base = Math.floor(c / n), r = c - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < r ? 1 : 0)) / 100);
+}
+function previaDias() {
+  const el = $('#previa'); if (!el) return;
+  const p = plat(S.lancPlat), n = S.lancDias.size, v = parseValor($('#fValor').value);
+  if (!n) { el.innerHTML = '<span class="neg">Selecione pelo menos um dia.</span>'; return; }
+  el.innerHTML = v > 0
+    ? `<b>${n} dia${n > 1 ? 's' : ''}</b> · média de <b class="ok">${fmtP(p, v / n)}</b> por dia`
+    : `<span class="mut">${n} dia${n > 1 ? 's' : ''} selecionado${n > 1 ? 's' : ''}. Digite o total que trouxe nesse período.</span>`;
 }
 async function salvarLanc() {
   const t = S.lancTipo, v = parseValor($('#fValor').value);
   if (!(v > 0)) return toast('Informe um valor válido', 'erro');
   const btn = $('#btnSalvar'); btn.disabled = true;
   try {
-    const obs = $('#fObs').value.trim() || null, data = $('#fData').value;
+    const obs = $('#fObs').value.trim() || null, data = $('#fData')?.value;
+    if (t === 'recarga' && S.lancModo === 'varios') {
+      const p = plat(S.lancPlat), dias = [...S.lancDias].sort();
+      if (!dias.length) return toast('Selecione os dias', 'erro');
+      const partes = dividir(v, dias.length, isQtd(p)), modo = $('#fModo').value;
+      const ja = await q(sb.from('producao').select('id,data,quantidade').eq('plataforma_id', p.id).in('data', dias));
+      const salvar = [], apagar = [];
+      dias.forEach((d, i) => {
+        const e = ja.find(x => x.data === d), qtd = modo === 'somar' && e ? Number(e.quantidade) + partes[i] : partes[i];
+        if (qtd > 0) salvar.push({ plataforma_id: p.id, data: d, quantidade: qtd });
+        else if (e) apagar.push(e.id);
+      });
+      if (salvar.length) await q(sb.from('producao').upsert(salvar, { onConflict: 'plataforma_id,data' }));
+      if (apagar.length) await q(sb.from('producao').delete().in('id', apagar));
+      toast(`✓ ${fmtP(p, v)} em ${dias.length} dias (${fmtP(p, v / dias.length)}/dia)`);
+      $('#fValor').value = ''; previaDias(); return;
+    }
     if (t === 'recarga') {
       const p = plat(S.lancPlat), d = data || iso(hoje());
       const ja = await q(sb.from('producao').select('id,quantidade,obs').eq('plataforma_id', p.id).eq('data', d).maybeSingle());
